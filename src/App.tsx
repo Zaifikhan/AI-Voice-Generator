@@ -28,6 +28,50 @@ interface GenerationResult {
   audioUrl: string;
 }
 
+const pcmToWav = (base64Pcm: string, sampleRate: number = 24000): string => {
+  const binaryString = atob(base64Pcm);
+  const pcmData = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    pcmData[i] = binaryString.charCodeAt(i);
+  }
+
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = pcmData.length;
+  const chunkSize = 36 + dataSize;
+
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, chunkSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  const pcmDataView = new Uint8Array(buffer, 44);
+  pcmDataView.set(pcmData);
+
+  const blob = new Blob([buffer], { type: 'audio/wav' });
+  return URL.createObjectURL(blob);
+};
+
 export default function App() {
   const [script, setScript] = useState('');
   const [voice, setVoice] = useState(VOICES[0].id);
@@ -130,7 +174,7 @@ export default function App() {
         throw new Error("Failed to generate audio.");
       }
 
-      const audioUrl = `data:audio/wav;base64,${base64Audio}`;
+      const audioUrl = pcmToWav(base64Audio);
       
       // Estimate duration based on word count (avg 150 words per minute)
       const wordCount = finalScript.split(/\s+/).length;
